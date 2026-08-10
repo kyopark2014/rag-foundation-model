@@ -1,0 +1,56 @@
+# Web UI (application/)
+fastapi
+python-multipart
+uvicorn[standard]
+
+# AWS
+boto3>=1.43.32
+botocore>=1.43.32
+
+# LangChain / LangGraph
+langchain_aws
+langchain
+langchain_community
+langchain-openai
+openai>=2.41.0
+langgraph
+langchain-text-splitters
+langchain_experimental
+
+# MCP
+mcp
+langchain-mcp-adapters
+awslabs.aws-documentation-mcp-server
+
+# Runtime / shared utilities
+httpx
+uv
+requests
+aiosqlite
+pyyaml
+Pillow
+pytz
+rich
+numpy
+pandas
+matplotlib==3.10.0
+plotly_express==0.4.1
+beautifulsoup4==4.12.3
+opensearch-py
+wikipedia
+kaleido
+diagrams
+graphviz
+colorama
+finance-datareader
+PyPDF2
+python-pptx
+defusedxml
+lxml
+openpyxl
+pytesseract
+markitdown[pptx]
+reportlab
+pypdf
+pdfplumber
+tavily-python
