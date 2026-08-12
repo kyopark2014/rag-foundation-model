@@ -4,19 +4,9 @@
 
 Amazon Bedrock Knowledge Bases의 **Foundation Model Parser**(`BEDROCK_FOUNDATION_MODEL`)는 파운데이션 모델을 이용해 PDF·이미지 등 복합 문서를 파싱합니다. 기본 파서보다 도표·표·이미지 설명이 풍부하고, 파싱 프롬프트를 커스터마이즈할 수 있으며, 비용은 모델 입·출력 토큰 기준으로 산정됩니다.
 
-이 저장소는 `agent-skills`와 동일한 Knowledge Base 설정을 `installer.py`로 배포합니다.
-
-### Knowledge Base 구성 (본 저장소)
-
-| 구분 | 값 |
-|------|-----|
-| **파싱 전략** | `BEDROCK_FOUNDATION_MODEL` |
-| **파싱 모델** | `global.anthropic.claude-sonnet-4-6` inference profile |
-| **청킹 + 임베딩** | Hierarchical (1500 / 300, overlap 60) + Titan Embed v2 |
-
 전체 architecture는 아래와 같습니다. 사용자는 FastAPI + React UI로 접속해서 파일을 업로드하면 Amazon S3에 저장됩니다. 이후 Knowledge Base로 sync 요청을 하면 Foundation Model Parser로 문서가 파싱된 뒤 chunking/embedding을 거쳐 Serverless OpenSearch에 저장됩니다. 이후로 사용자가 Agent 채팅으로 질의하면 MCP를 이용해 Knowledge Base를 조회합니다. Knowledge Base는 Hybrid로 vector/keyword 검색이 가능하며, 문서 추가나 삭제가 용이합니다.
 
-<img width="600" alt="image" src="https://github.com/user-attachments/assets/1805c976-5bf2-45f5-86ea-32ee24160d05" />
+<img width="679" height="317" alt="image" src="https://github.com/user-attachments/assets/e7c55cfc-2059-4627-921a-f0847b4bf177" />
 
 
 ## Foundation Model Parser
