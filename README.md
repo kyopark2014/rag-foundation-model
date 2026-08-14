@@ -84,15 +84,6 @@ flowchart TB
   BT --> S3
 ```
 
-| 모드 | 모듈 | 설명 |
-|------|------|------|
-| 일상적인 대화 | `chat.general_conversation` | LangChain `ChatBedrock` + 대화 이력(`ConversationBufferMemory`) 스트리밍 |
-| RAG | `chat.run_rag_with_knowledge_base` | Bedrock Knowledge Base `retrieve` 검색 후 RAG 프롬프트 체인으로 답변 생성 |
-| **Agent** | `langgraph_agent.run_langgraph_agent` | LangGraph ReAct 루프 + Built-in 도구 + MCP + Skills (`history_mode=Disable`) |
-| **Agent (Chat)** | `langgraph_agent.run_langgraph_agent` | Agent와 동일하나 `checkpointer`로 대화 이력 유지 (`history_mode=Enable`) |
-| 이미지 분석 | `chat.summarize_image` | `ChatBedrock` 멀티모달 (이미지 + 텍스트) 분석 |
-| 번역하기 | `chat.translate_text` | `ChatBedrock`으로 한↔영 번역 |
-
 ### 파서 옵션 비교
 
 Knowledge Bases에서 사용할 수 있는 파서는 세 가지입니다. **이 프로젝트는 파운데이션 모델 파서를 사용합니다.**
