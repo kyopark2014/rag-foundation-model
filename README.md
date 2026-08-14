@@ -2,7 +2,7 @@
 
 ## 개요
 
-Amazon Bedrock Knowledge Bases의 **Foundation Model Parser**(`BEDROCK_FOUNDATION_MODEL`)는 파운데이션 모델을 이용해 PDF·이미지 등 복합 문서를 파싱합니다. 기본 파서보다 도표·표·이미지 설명이 풍부하고, 파싱 프롬프트를 커스터마이즈할 수 있으며, 비용은 모델 입·출력 토큰 기준으로 산정됩니다.
+Amazon Bedrock Knowledge Bases의 **Foundation Model Parser**는 파운데이션 모델을 이용해 PDF·이미지 등 복합 문서를 파싱합니다. 기본 파서보다 도표·표·이미지 설명이 풍부하고, 파싱 프롬프트를 커스터마이즈할 수 있으며, 비용은 모델 입·출력 토큰 기준으로 산정됩니다.
 
 전체 architecture는 아래와 같습니다. 사용자는 FastAPI + React UI로 접속해서 파일을 업로드하면 Amazon S3에 저장됩니다. 이후 Knowledge Base로 sync 요청을 하면 Foundation Model Parser로 문서가 파싱된 뒤 chunking/embedding을 거쳐 Serverless OpenSearch에 저장됩니다. 이후로 사용자가 Agent 채팅으로 질의하면 MCP를 이용해 Knowledge Base를 조회합니다. Knowledge Base는 Hybrid로 vector/keyword 검색이 가능하며, 문서 추가나 삭제가 용이합니다.
 
@@ -101,7 +101,7 @@ Knowledge Bases에서 사용할 수 있는 파서는 세 가지입니다. **이 
 
 ### 본 저장소 Knowledge Base 설정
 
-`installer.py`는 `agent-skills`와 동일한 인제스션 구성을 적용합니다.
+`installer.py`는 Knowledbe Base를 아래와 같이 설정합니다.
 
 - **파싱 전략:** `BEDROCK_FOUNDATION_MODEL`
 - **파싱 모델:** `global.anthropic.claude-sonnet-4-6` inference profile
@@ -179,7 +179,6 @@ Foundation Model Parser는 Knowledge Base 역할에 Bedrock 모델 호출 권한
     "bedrock:GetFoundationModel"
   ],
   "Resource": [
-    "*",
     "arn:aws:bedrock:<region>:<account-id>:inference-profile/*",
     "arn:aws:bedrock:<region>:*:inference-profile/*",
     "arn:aws:bedrock:*::foundation-model/*"
@@ -188,18 +187,6 @@ Foundation Model Parser는 Knowledge Base 역할에 Bedrock 모델 호출 권한
 ```
 
 추가로 S3(`s3:*`) 및 OpenSearch Serverless(`aoss:APIAccessAll`) 권한이 필요합니다.
-
-
-### 임베딩 모델과의 조합
-
-이 프로젝트는 **텍스트 임베딩(Titan Embed v2) + Foundation Model Parser** 조합을 사용합니다.
-
-| 상황 | 권장 구성 |
-|------|-----------|
-| 텍스트 문서 위주, 멀티모달 불필요 | 기본 파서 + 텍스트 임베딩 |
-| PDF/도표/표 포함, 텍스트 기반 검색 | **Foundation Model Parser + 텍스트 임베딩** (본 저장소) |
-| 오디오/비디오까지 포함 | BDA 파서 검토 |
-| 이미지 전용 데이터셋 검색 | Titan Multimodal Embeddings G1 + 기본 파서 |
 
 
 ### 주요 활용 사례
@@ -224,7 +211,6 @@ rag-foundation-model/
 ├── installer.py               # AWS 인프라 일괄 배포 스크립트 (boto3)
 ├── installer.md               # installer.py 상세 문서 (생성 리소스/배포 순서)
 ├── uninstaller.py             # installer.py가 생성한 리소스 일괄 삭제 스크립트
-├── add_content.py             # 콘텐츠를 S3 업로드 후 Knowledge Base 동기화
 │
 └── application/               # FastAPI + React 기반 Agent / RAG 애플리케이션
     ├── server.py              # FastAPI 진입점 + SPA 서빙
@@ -247,10 +233,8 @@ rag-foundation-model/
 |------|------|
 | `installer.py` | S3, IAM, Secrets Manager, OpenSearch Serverless, VPC, ALB, CloudFront, EC2, Bedrock Knowledge Base를 순서대로 생성합니다. **Foundation Model Parser**가 적용된 Knowledge Base를 자동으로 구성하고, 결과를 `application/config.json`에 기록합니다. 자세한 내용은 `installer.md` 참조. |
 | `uninstaller.py` | `installer.py`가 만든 모든 AWS 리소스를 의존성 역순으로 안전하게 삭제합니다. |
-| `add_content.py` | 로컬 콘텐츠를 S3 데이터 소스 버킷에 업로드한 뒤, Knowledge Base 데이터 소스에 대해 `StartIngestionJob`을 호출하여 Foundation Model Parser로 재색인합니다. |
 | `requirements.txt` | `fastapi`, `uvicorn`, `boto3`, `langchain_aws`, `langgraph`, `mcp`, `langchain-mcp-adapters` 등 애플리케이션 실행에 필요한 Python 패키지를 정의합니다. |
 | `run_local.sh` | React 프론트 빌드 후 `uvicorn application.server:app`를 포트 8501에서 기동합니다. |
-| `Dockerfile` | Node/Python 이미지로 프론트를 빌드하고 FastAPI를 서빙합니다. |
 
 ### `application/` 디렉터리 구성요소
 
@@ -275,186 +259,11 @@ rag-foundation-model/
 3. **애플리케이션 실행** — `uvicorn application.server:app --port 8501` (또는 `./run_local.sh`)로 FastAPI + React UI를 기동하며, CloudFront 도메인을 통해 외부에서 접속합니다.
 4. **질의 처리** — React UI에서 Agent 채팅을 보내면 `/api/tasks/{id}/chat` SSE → `chat.run_agent` → `langgraph_agent`로 Skill/MCP(RAG 포함) 도구를 호출합니다.
 
-### Message Trim
 
-LangGraph 에이전트([application/langgraph_agent.py](./application/langgraph_agent.py)의 `call_model`)는 LLM 호출 직전에 **HumanMessage 기준 최근 N턴**만 남깁니다. LangGraph state의 `messages`는 checkpointer에 그대로 두고, **모델에 넘기는 메시지만** trim합니다. `history_mode=Enable`/`Disable` 모두 동일하게 적용됩니다.
-
-**기본값:** `MAX_CONTEXT_TURNS = 5` (일반 채팅의 `SimpleMemory(k=5)`와 동일한 “최근 5턴” 의도)
-
-**설정 변경:**
-
-- [application/langgraph_agent.py](./application/langgraph_agent.py)의 `MAX_CONTEXT_TURNS` 상수 수정
-- 또는 `create_agent()`에서 생성하는 config의 `max_turns` / `configurable.max_turns` 지정
-- `max_turns=0`이면 trim 비활성화
-
-상수와 trim 함수는 `langgraph_agent.py`에 정의합니다.
-
-```python
-# application/langgraph_agent.py
-MAX_CONTEXT_TURNS = 5
+### Multimodal Parser 적용시 비용
 
 
-def trim_messages_by_human_turns(messages: list, max_turns: int) -> list:
-    """Keep messages from the last N HumanMessage turns (inclusive)."""
-    if max_turns <= 0 or not messages:
-        return messages
-
-    human_indices = [i for i, msg in enumerate(messages) if isinstance(msg, HumanMessage)]
-    if len(human_indices) <= max_turns:
-        return messages
-
-    return messages[human_indices[-max_turns]:]
-```
-
-`call_model`에서는 `ToolMessage` content 정규화 후 trim을 적용합니다.
-
-```python
-# application/langgraph_agent.py — call_model() 내부
-        max_turns = (
-            config.get("configurable", {}).get("max_turns")
-            or config.get("max_turns")
-            or MAX_CONTEXT_TURNS
-        )
-        trimmed = trim_messages_by_human_turns(messages, max_turns)
-        if len(trimmed) < len(messages):
-            logger.info(
-                f"trimmed messages from {len(messages)} to {len(trimmed)} "
-                f"(max_turns={max_turns})"
-            )
-            messages = trimmed
-
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system),
-            MessagesPlaceholder(variable_name="messages"),
-        ])
-        chain = prompt | model
-        async for chunk in chain.astream({"messages": messages}):
-            ...
-```
-
-에이전트 config는 `create_agent()`에서 생성하며, `history_mode`와 관계없이 `max_turns`를 전달합니다.
-
-```python
-# application/langgraph_agent.py — create_agent()
-    if history_mode == "Enable":
-        app = buildChatAgentWithHistory(tools)
-        config = {
-            "recursion_limit": 500,
-            "configurable": {"thread_id": chat.user_id},
-            "tools": tools,
-            "system_prompt": system_prompt,
-            "max_turns": MAX_CONTEXT_TURNS,
-        }
-    else:
-        app = buildChatAgent(tools)
-        config = {
-            "recursion_limit": 500,
-            "configurable": {"thread_id": chat.user_id},
-            "tools": tools,
-            "system_prompt": system_prompt,
-            "max_turns": MAX_CONTEXT_TURNS,
-        }
-```
-
-**`max_turns=5`의 의미**
-
-- **사용자 HumanMessage 5개**와, 각 턴에 이어진 **모든 후속 메시지**를 유지
-- 1턴 = `HumanMessage` 1개 + 그 뒤의 `AIMessage`, `ToolMessage`, 도구 feedback loop 전체
-- 도구를 여러 번 호출해도 **같은 사용자 질문이면 1턴**으로 카운트
-
-**예 (도구 사용 포함)**
-
-```
-Human(Q1) → AI(tool_calls) → ToolMessage → AI(A1)
-Human(Q2) → AI(A2)
-Human(Q3) → AI(tool_calls) → ToolMessage → AI(A3)
-```
-
-`max_turns=2`이면 **Q2부터** 유지:
-
-```
-Human(Q2) → AI(A2) → Human(Q3) → AI(tool_calls) → ToolMessage → AI(A3)
-```
-
-**메시지 개수 trim과의 차이**
-
-| 방식 | `N=5`일 때 |
-|------|------------|
-| 이전 (메시지 개수) | 메시지 객체 5개만 유지 → 도구 루프 때문에 사용자 턴 수가 불규칙 |
-| 현재 (HumanMessage 턴) | 사용자 질문 5개 + 각 턴의 AI/Tool 응답 전체 유지 |
-
-**Checkpointer와의 관계**
-
-- `history_mode=Enable`일 때 `MemorySaver` checkpointer에는 **전체 대화 이력**이 저장됩니다.
-- trim은 LLM 컨텍스트 윈도우 관리용이며, 저장된 history를 삭제하지 않습니다.
-- CloudWatch(`/ecs/...`) 또는 애플리케이션 로그에서 `trimmed messages from X to Y (max_turns=5)`로 trim 여부를 확인할 수 있습니다.
-
-
-## 설치 및 실행
-
-여기서는 [installer.py](./installer.py) 하나로 RAG 시스템 구동에 필요한 AWS 인프라(S3, OpenSearch Serverless, Bedrock Knowledge Base, VPC, ALB, CloudFront, EC2)를 일괄 배포하고, 애플리케이션은 FastAPI(`uvicorn application.server:app`, 포트 8501)로 기동하도록 설계되어 있습니다.
-
-### 사전 준비 (Prerequisites)
-
-| 항목 | 요구사항 |
-|------|----------|
-| AWS 계정 | 관리자 권한 또는 인프라 생성 권한 (IAM, S3, EC2, VPC, ALB, CloudFront, OpenSearch Serverless, Bedrock, Secrets Manager) |
-| AWS 리전 | `us-west-2` (기본값, Claude / Titan Embed / Nova 모델 사용 가능 리전) |
-| Bedrock 모델 액세스 | AWS 콘솔 → Bedrock → **Model access** 에서 사용할 모델(Nova, Claude, Titan Embed v2 등) 활성화 필요 |
-| Python | 3.10 이상 |
-| AWS CLI | 자격증명 설정 완료 (`aws configure` 또는 SSO) |
-
-### 1단계: 저장소 클론 및 의존성 설치
-
-```bash
-git clone https://github.com/kyopark2014/rag-foundation-model && cd rag-foundation-model
-
-pip install -r requirements.txt
-```
-
-### 2단계: AWS 자격증명 설정
-
-`installer.py`, `uninstaller.py`, `add_content.py` 모두 boto3 기본 자격증명 체인을 사용합니다. 다음 중 하나를 구성하세요.
-
-```bash
-aws configure                      # Access Key 방식
-
-aws sso login --profile <profile>  # SSO 사용 시
-export AWS_PROFILE=<profile>
-```
-
-기본 리전 및 프로젝트명은 `installer.py` 상단에서 수정할 수 있습니다.
-
-```python
-project_name = "rag-automation"   # 최소 3자
-region = "us-west-2"
-```
-
-### 3단계: AWS 인프라 배포
-
-루트 디렉터리에서 `installer.py`를 실행하면 약 15~25분에 걸쳐 모든 리소스가 생성됩니다.
-
-```bash
-python installer.py
-```
-
-배포가 완료되면 콘솔에 다음 정보가 출력되고 `application/config.json`이 자동으로 채워집니다.
-
-```
-================================================================
-Infrastructure Deployment Completed Successfully!
-================================================================
-  S3 Bucket:           storage-for-rag-project-<account_id>-us-west-2
-  Knowledge Base ID:   XXXXXXXXXX
-  OpenSearch Endpoint: https://xxxxxxxx.us-west-2.aoss.amazonaws.com
-  ALB DNS:             http://alb-for-rag-automation-xxxx.us-west-2.elb.amazonaws.com/
-  CloudFront URL:      https://xxxxxxxxx.cloudfront.net
-================================================================
-```
-
-> CloudFront 배포는 완전히 활성화되기까지 15~20분이 추가로 소요될 수 있습니다. 자세한 옵션(`--run-setup`, `--verify-deployment`)과 생성 리소스 명세는 [`installer.md`](installer.md) 참조.
-
-### Metadata Filtering (OpenSearch + Foundation Model Parser)
+## Metadata Filtering (OpenSearch + Foundation Model Parser)
 
 Amazon Bedrock Knowledge Bases는 원본 문서와 함께 `파일명.확장자.metadata.json` sidecar를 S3에 올리면 문서별 커스텀 메타데이터를 인덱싱합니다.
 조회 시 `Retrieve`의 `vectorSearchConfiguration.filter`로 사전 필터링한 뒤 유사도/하이브리드 검색을 수행합니다.
@@ -466,7 +275,7 @@ Amazon Bedrock Knowledge Bases는 원본 문서와 함께 `파일명.확장자.m
 이 프로젝트(OpenSearch Serverless)는 UI/API RAG 업로드 시 `application/services/rag_service.py`가
 `docs/{projectName}/{user_id}/{file}.metadata.json` sidecar를 함께 올립니다.
 
-#### OpenSearch에서 허용되는 타입
+### OpenSearch에서 허용되는 타입
 
 OpenSearch Serverless는 `STRING` / `NUMBER` / `BOOLEAN` / **`STRING_LIST`** 를 지원합니다.
 
@@ -505,7 +314,7 @@ OpenSearch Serverless는 `STRING` / `NUMBER` / `BOOLEAN` / **`STRING_LIST`** 를
 }
 ```
 
-#### 검색 설정
+### 검색 설정
 
 `mcp_retrieve.retrieve()` / `chat.retrieve()` 기본값:
 
@@ -524,6 +333,71 @@ retrievalConfiguration={
 - **HYBRID**: OpenSearch Serverless에서 벡터 + 원문 키워드 검색 (Foundation Model Parser로 추출된 텍스트 청크에도 적용).
 - **owner 필터**: `langgraph_agent.create_agent()`가 RAG MCP(`kb-retrieve`)에 `RAG_USER_ID`를 주입하고, retrieve는 해당 사용자 문서만 반환합니다.
 - **페이지 번호**: OpenSearch + PDF에서 KB가 `x-amz-bedrock-kb-document-page-number`를 부여하면 참조에 1-based page로 표시합니다.
+
+
+
+
+## 설치 및 실행
+
+여기서는 [installer.py](./installer.py) 하나로 RAG 시스템 구동에 필요한 AWS 인프라(S3, OpenSearch Serverless, Bedrock Knowledge Base, VPC, ALB, CloudFront, EC2)를 일괄 배포하고, 애플리케이션은 FastAPI(`uvicorn application.server:app`, 포트 8501)로 기동하도록 설계되어 있습니다.
+
+### 사전 준비 (Prerequisites)
+
+| 항목 | 요구사항 |
+|------|----------|
+| AWS 계정 | 관리자 권한 또는 인프라 생성 권한 (IAM, S3, EC2, VPC, ALB, CloudFront, OpenSearch Serverless, Bedrock, Secrets Manager) |
+| AWS 리전 | `us-west-2` (기본값, Claude / Titan Embed / Nova 모델 사용 가능 리전) |
+| Bedrock 모델 액세스 | AWS 콘솔 → Bedrock → **Model access** 에서 사용할 모델(Nova, Claude, Titan Embed v2 등) 활성화 필요 |
+| Python | 3.10 이상 |
+| AWS CLI | 자격증명 설정 완료 (`aws configure` 또는 SSO) |
+
+### 1단계: 저장소 클론 및 의존성 설치
+
+```bash
+git clone https://github.com/kyopark2014/rag-foundation-model && cd rag-foundation-model
+
+pip install -r requirements.txt
+```
+
+### 2단계: AWS 자격증명 설정
+
+`installer.py`, `uninstaller.py`, `add_content.py` 모두 boto3 기본 자격증명 체인을 사용합니다. 다음 중 하나를 구성하세요.
+
+```bash
+aws configure                      # Access Key 방식
+```
+
+기본 리전 및 프로젝트명은 `installer.py` 상단에서 수정할 수 있습니다.
+
+```python
+project_name = "rag-automation"   # 최소 3자
+region = "us-west-2"
+```
+
+### 3단계: AWS 인프라 배포
+
+루트 디렉터리에서 `installer.py`를 실행하면 약 15~25분에 걸쳐 모든 리소스가 생성됩니다.
+
+```bash
+python installer.py
+```
+
+배포가 완료되면 콘솔에 다음 정보가 출력되고 `application/config.json`이 자동으로 채워집니다.
+
+```
+================================================================
+Infrastructure Deployment Completed Successfully!
+================================================================
+  S3 Bucket:           storage-for-rag-project-<account_id>-us-west-2
+  Knowledge Base ID:   XXXXXXXXXX
+  OpenSearch Endpoint: https://xxxxxxxx.us-west-2.aoss.amazonaws.com
+  ALB DNS:             http://alb-for-rag-automation-xxxx.us-west-2.elb.amazonaws.com/
+  CloudFront URL:      https://xxxxxxxxx.cloudfront.net
+================================================================
+```
+
+> CloudFront 배포는 완전히 활성화되기까지 15~20분이 추가로 소요될 수 있습니다. 자세한 옵션(`--run-setup`, `--verify-deployment`)과 생성 리소스 명세는 [`installer.md`](installer.md) 참조.
+
 
 ### 4단계: 문서 적재 및 Knowledge Base 동기화
 
@@ -574,6 +448,10 @@ CloudFront 비활성화에 시간이 걸려 일부 리소스가 남을 수 있�
 | CloudFront 도메인 502/503 | 배포 직후 15~20분 활성화 대기, EC2 인스턴스 상태 및 ALB 타겟 그룹 헬스 확인 (포트 8501) |
 | `add_content.py` 실행 시 config 로드 실패 | `python installer.py`로 인프라 배포가 정상 완료되어 `application/config.json`이 생성되었는지 확인 |
 | Foundation Model Parser 인제스션 실패 | 파싱 모델 액세스·inference profile ARN이 올바른지, 파일이 FM 파서 지원 형식인지, 비밀번호로 보호된 PDF가 아닌지 확인 |
+
+
+
+
 
 ## 실행 결과
 
