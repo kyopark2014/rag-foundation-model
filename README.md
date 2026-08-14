@@ -262,6 +262,121 @@ rag-foundation-model/
 
 ### Multimodal Parser 적용시 비용
 
+본 저장소는 Self-Managed Knowledge Base에 **Foundation Model Parser**(`BEDROCK_FOUNDATION_MODEL`, `global.anthropic.claude-sonnet-4-6`)를 사용합니다. AWS 문서에서 말하는 multimodal parser는 기본 파서가 아니라, 도표·표·이미지를 해석하는 **Foundation Model Parser**와 **Bedrock Data Automation(BDA) Parser**를 가리킵니다. 과금 단위가 서로 다르므로 예측 전에 파서 종류를 구분해야 합니다.
+
+> **Managed Knowledge Base와의 차이:** Amazon Bedrock Managed Knowledge Base의 managed parser는 요금표상 multimodal document parsing이 **$0**입니다. 본 저장소처럼 직접 데이터 소스와 파서 모델을 지정하는 Self-Managed Knowledge Base에는 이 면제가 적용되지 않습니다.
+
+#### 파서별 과금 단위 (공식 문서)
+
+| 파서 | 과금 단위 | 본 저장소 | 근거 |
+|------|-----------|-----------|------|
+| Default parser | 파서 사용 요금 **없음** (텍스트만 추출) | 미사용 | [Parsing options](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-advanced-parsing.html) |
+| Foundation Model Parser | 선택한 모델의 **input + output 토큰** | **사용 중** (Claude Sonnet 4.6) | 동일 문서 + [Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/) |
+| BDA Parser (KB 연동) | **페이지 수**(문서) 또는 **이미지 수**. KB 연동은 Standard Output | 미사용 | 동일 문서 + Pricing Example 3 |
+
+공식 산정 공식 (FM parser):
+
+```text
+parser_cost =
+  (input_tokens  / 1,000,000 × 모델 input 단가)
++ (output_tokens / 1,000,000 × 모델 output 단가)
+```
+
+- **Input 토큰:** 파싱 프롬프트 + 페이지 텍스트 + (멀티모달 시) 이미지 visual token
+- **Output 토큰:** 모델이 추출·서술한 텍스트 (표 마크다운, 도표 설명 등). 문서가 복잡하고 `parsingPrompt`가 길수록 증가
+- 단가는 파서에 지정한 **inference profile / 모델**의 On-Demand 요금을 따릅니다. 본 저장소는 Global profile이므로 Global 토큰 단가를 사용합니다.
+
+#### 반드시 반영해야 하는 과금 규칙
+
+AWS 문서([Parsing options](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-advanced-parsing.html), [Customize ingestion](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-data-source-customize-ingestion.html)) 기준:
+
+1. **텍스트만 있는 PDF도 과금됩니다.** FM/BDA 파서를 선택하면 해당 데이터 소스의 **모든 PDF**에 적용되며, 기본 파서로 폴백되어 무료 처리되지 않습니다.
+2. **재동기화(re-ingest)마다 다시 과금됩니다.** 파서·청킹·임베딩 설정을 바꾸거나 문서를 다시 sync하면 파싱 토큰이 재발생합니다.
+3. **파서 전략 타입은 데이터 소스 생성 후 변경할 수 없습니다.** (`BEDROCK_FOUNDATION_MODEL` ↔ `BEDROCK_DATA_AUTOMATION`) 비용 최적화를 위해 BDA로 바꾸려면 새 데이터 소스가 필요합니다.
+4. **FM 파서 총 파일 크기 한도는 100 GB**입니다. 개별 소스 파일은 일반적으로 50 MB, JPEG/PNG는 3.75 MB입니다. ([Data source limits](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-ds.html))
+5. **FM 파서는 이미지·구조화 문서(PDF/JPEG/PNG)만** 처리합니다. 오디오·비디오는 BDA가 필요합니다. ([Multimodal approach](https://docs.aws.amazon.com/bedrock/latest/userguide/kb-multimodal-choose-approach.html))
+6. **`parsingModality: MULTIMODAL`** 을 켜면 도표·이미지 파일을 supplemental S3에 저장하고 검색 시 반환할 수 있습니다. 이 설정은 Knowledge Base 생성 시 supplemental S3 URI가 필요하며, **생성 후에는 추가할 수 없습니다.** 이미지 입력이 input 토큰을 늘립니다.
+7. 지원 파서 모델은 Claude / Nova / Llama 4 **vision** 계열입니다. ([Supported models for parsing](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-supported.html#knowledge-base-supported-parsing))
+
+#### 본 저장소 파서 모델 단가 (예측용)
+
+`installer.py` 기본값: `inference-profile/global.anthropic.claude-sonnet-4-6`
+
+| 항목 | 값 (On-Demand, Global, 2026-08 기준) | 출처 |
+|------|--------------------------------------|------|
+| 파싱 모델 | Claude Sonnet 4.6 Global | 본 저장소 `parsing_model_arn` |
+| Input | **$3.00 / 1M tokens** | [AWS Marketplace: Claude Sonnet 4.6 (Bedrock)](https://aws.amazon.com/marketplace/pp/prodview-o6w4hyizv7g64), [Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/) |
+| Output | **$15.00 / 1M tokens** | 동일 |
+| (대안) Haiku 4.5 Input / Output | $1.00 / $5.00 per 1M | `installer.py` 주석 대안 모델. [Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/)에서 리전·profile 확인 |
+
+리전 전용(CRIS) 엔드포인트는 Global 대비 가산이 있을 수 있습니다. 예측 전에 [Amazon Bedrock Pricing](https://aws.amazon.com/bedrock/pricing/)에서 해당 모델·리전 단가를 재확인하세요.
+
+#### AWS 공개 토큰 가정으로 1,000페이지 예측
+
+[Bedrock Pricing — Data Automation Example 3](https://aws.amazon.com/bedrock/pricing/)은 Knowledge Bases 파서 비용 구조를 이렇게 구분합니다.
+
+- BDA: 페이지 단가. KB 연동 Standard Output **$0.010 / page** → 1,000페이지 = **$10**
+- FM parser: input/output 토큰. 표 30%·도표 30%인 문서의 전형적인 소비로 **2,900 input + 750 output 토큰**을 제시
+
+동일 예시의 비교 맥락(페이지 단가 vs 토큰 단가)과 물리적으로 타당한 규모를 고려하면, 위 2,900 / 750은 **페이지당** 계획값으로 쓰는 것이 맞습니다. AWS도 “콘텐츠 유형에 따라 달라지므로 자체 데이터로 검증하라”고 명시합니다.
+
+**1,000페이지, AWS 전형 토큰, Claude Sonnet 4.6 Global**
+
+| 항목 | 계산 | 예상 비용 |
+|------|------|-----------|
+| Parser input | 1,000 × 2,900 = 2.9M tokens × $3.00 | **$8.70** |
+| Parser output | 1,000 × 750 = 0.75M tokens × $15.00 | **$11.25** |
+| **FM parser 합계** | | **$19.95** |
+| 동일 문서를 BDA Standard Output으로 파싱할 경우 | 1,000 × $0.010 | **$10.00** |
+| (참고) 동일 토큰을 Haiku 4.5로 파싱 | 2.9M × $1.00 + 0.75M × $5.00 | **$6.65** |
+
+페이지당 대략:
+
+```text
+Sonnet 4.6 ≈ (2,900 / 1e6 × $3) + (750 / 1e6 × $15) ≈ $0.0087 + $0.01125 ≈ $0.020 / page
+Haiku 4.5  ≈ (2,900 / 1e6 × $1) + (750 / 1e6 × $5)  ≈ $0.0029 + $0.00375 ≈ $0.0067 / page
+BDA KB     ≈ $0.010 / page   (페이지 수·이미지만으로 예측 가능, 토큰 변동 없음)
+```
+
+스캔본·고해상도 도표·긴 `parsingPrompt`가 있으면 input(시각 토큰)과 output(서술 길이)이 모두 늘어 **페이지당 $0.02를 크게 초과**할 수 있습니다. Claude 이미지 입력은 대략 `⌈width/28⌉ × ⌈height/28⌉` visual token으로 잡히며, 이 값이 파서 input에 포함됩니다. ([Anthropic Vision](https://platform.claude.com/docs/en/build-with-claude/vision), [Count tokens](https://docs.aws.amazon.com/bedrock/latest/userguide/count-tokens.html))
+
+#### 파서 외에 같이 발생하는 인제스션 비용
+
+FM parser 요금만으로 Knowledge Base 전체 비용이 끝나지 않습니다.
+
+| 구성요소 | 과금 | 본 저장소 |
+|----------|------|-----------|
+| Embedding (인제스션 + 질의) | Titan Text Embeddings V2 **$0.02 / 1M input tokens** (output 없음) | `amazon.titan-embed-text-v2:0` 1024 dim. 파서 대비 보통 작음 |
+| OpenSearch Serverless | Indexing/Search OCU-hour + 스토리지. 상시 가동 시 월 비용의 대부분 | 본 저장소 벡터 스토어. 파서와 무관한 **고정/가동 비용** |
+| S3 | 원본 문서 + (MULTIMODAL 시) 추출된 도표/이미지 객체 | `docs/{project}/` |
+| 질의 경로 | Retrieve는 KB/OpenSearch 비용. 답변 생성은 채팅 모델 토큰 | Agent Chat / `RetrieveAndGenerate` 는 파서 요금과 별도 |
+
+임베딩은 Hierarchical chunk(parent 1500 / child 300, overlap 60)로 잘린 **텍스트 토큰**에만 부과됩니다. 파서가 도표를 길게 서술할수록 청크 수와 임베딩 토큰도 함께 늘어납니다.
+
+#### 예측 절차 (권장)
+
+1. 대표 문서(텍스트 PDF, 표 중심, 스캔/도표 중심)를 소수만 업로드하고 sync합니다.
+2. CloudWatch / Cost Explorer에서 파서 모델(`claude-sonnet-4-6`)의 **input/output 토큰**을 확인합니다. Inference profile을 쓰면 파싱 호출을 추적하기 쉽습니다. ([Inference profiles](https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-supported.html))
+3. `페이지당 평균 input/output` 을 구한 뒤 전체 페이지 수에 곱합니다.
+4. 텍스트 전용 문서는 **별도 데이터 소스 + Default parser**(파서 $0)로 분리하면, 시각 정보가 없는 PDF에 FM 토큰이 나가지 않습니다. AWS도 파서를 데이터 소스 단위로 고른다고 명시합니다.
+
+자체 실측값이 없을 때의 보수적 범위 (Sonnet 4.6, 페이지당):
+
+| 문서 성격 | Input 가정 | Output 가정 | 페이지당 파서 비용 |
+|-----------|------------|-------------|-------------------|
+| 텍스트 위주 PDF | 1,500 | 400 | ≈ $0.011 |
+| AWS 전형 (표 30% · 도표 30%) | 2,900 | 750 | ≈ $0.020 |
+| 스캔·이미지 다수 | 5,000+ | 1,200+ | ≈ $0.033 이상 |
+
+예: 월 5,000페이지를 AWS 전형 가정으로 인제스션하면 파서만 **약 $100** (`5,000 × $0.020`). 같은 양을 매월 재인제스션하면 파서 비용이 반복됩니다.
+
+#### 비용 제어
+
+- 시각 정보가 필요한 문서만 FM 파서 prefix에 두고, 나머지는 Default parser 데이터 소스로 분리합니다.
+- 품질이 충분하면 `installer.py`의 Haiku 4.5 대안 모델로 바꾸면 동일 토큰 기준 약 1/3 수준입니다. (`modelArn`은 같은 전략 안에서 갱신 가능)
+- 페이지 단가가 예측 가능해야 하면 BDA(KB Standard Output **$0.010/page**)를 검토합니다. 다만 전략 타입은 새 데이터 소스로만 전환됩니다.
+- `parsingPrompt`를 짧게 유지하고, 불필요한 전체 재sync를 피웁니다.
+
 
 ## Metadata Filtering (OpenSearch + Foundation Model Parser)
 
@@ -515,3 +630,7 @@ CloudFront 비활성화에 시간이 걸려 일부 리소스가 남을 수 있�
 | BedrockFoundationModelConfiguration API | https://docs.aws.amazon.com/bedrock/latest/APIReference/API_agent_BedrockFoundationModelConfiguration.html |
 | Supported models and Regions for parsing | https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-supported.html |
 | Create a knowledge base | https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-create.html |
+| Choosing your multimodal processing approach | https://docs.aws.amazon.com/bedrock/latest/userguide/kb-multimodal-choose-approach.html |
+| Knowledge base data source formats and limits | https://docs.aws.amazon.com/bedrock/latest/userguide/knowledge-base-ds.html |
+| Amazon Bedrock Pricing (FM 토큰 / BDA 페이지 단가) | https://aws.amazon.com/bedrock/pricing/ |
+| Claude Sonnet 4.6 (Bedrock Edition) Marketplace 단가 | https://aws.amazon.com/marketplace/pp/prodview-o6w4hyizv7g64 |
