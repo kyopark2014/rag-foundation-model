@@ -37,6 +37,7 @@ MODELS = [
     "OpenAI GPT 5.4",
     "OpenAI GPT 5.5",
     "OpenAI GPT 6 Astra",
+    "OpenAI GPT 6.1 Sol",
     "OpenAI GPT 6 Sol",
     "OpenAI GPT 6 Luna",
     "OpenAI GPT 5.6 Sol",
@@ -46,8 +47,8 @@ MODELS = [
     "OpenAI OSS 20B",
 ]
 
-DEFAULT_MODEL = "Claude 4.6 Sonnet"
-DEFAULT_GATEWAY_MODEL = "Claude 4.6 Sonnet"
+DEFAULT_MODEL = "Claude 5.0 Sonnet"
+DEFAULT_GATEWAY_MODEL = "Claude 5.0 Sonnet"
 
 
 def load_capability_list_from_path(path: str) -> list[str]:
